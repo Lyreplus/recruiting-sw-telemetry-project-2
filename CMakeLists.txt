@@ -21,10 +21,10 @@ add_library(
 )
 
 target_link_libraries(${PROJECT_NAME}
-    # Other librs
+
 )
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
-add_executable(project_2 main.cpp)
+add_executable(project_2 main.cpp fake_receiver.c unixTime.cpp)
 target_link_libraries(project_2 ${PROJECT_NAME})

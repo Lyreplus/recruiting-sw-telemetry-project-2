@@ -1,4 +1,4 @@
-#include <cstdio>
+//#include <cstdio>
 #include <iostream>
 #include <ranges>
 #include <thread>
@@ -7,6 +7,10 @@ using namespace std;
 #include <fstream>
 #include "fake_receiver.h"
 #include <cmath>
+#include <string>
+#include <vector>
+#include "unixTime.h"
+#include <iomanip>
 
 extern "C"{
     #include "fake_receiver.h"
@@ -31,20 +35,11 @@ void checkS2(){
 
 }
 
-void parse(std::string str){
-    std::string id;
-    int i = 0;
-
-    while(str[i] != '#'){
-        id.push_back(str[i]);
-        i++;
-    }
-    cout<< "Stringa parsata: " << id << endl;
-
+int hexToDec(std::string str){
     int hexToDec = 0;
     int z = 0;
-    for(int y = id.length()-1; y>=0; y--){
-        char a = id.at(y);
+    for(int y = str.length()-1; y>=0; y--){
+        char a = str.at(y);
         if(a >= 48 && a<=57){
             int ia = a - '0';
             hexToDec += ia*(int)pow(16, z);
@@ -56,92 +51,186 @@ void parse(std::string str){
         }
         z++;
     }
+    return hexToDec;
+}
 
-    cout << hexToDec << endl;
+/*actual functions that do the work*/
+void parse(std::string str) {
+    std::string id;
+    std::string payload;
+    int i = 0;
 
-//    static const char hex_digits[] = "0123456789ABCDEF";
-//
-//    std::string output;
-//    output.reserve(id.length() * 2);
-//    for (unsigned char c : id)
-//    {
-//        output.push_back(hex_digits[c >> 4]);
-//        output.push_back(hex_digits[c & 15]);
-//    }
+    while (str[i] != '#') {
+        id.push_back(str[i]);
+        i++;
+    }
+
+    uint16_t id_dec = hexToDec(id);
+
+    cout << "ID: " << id_dec << endl;
+
+    i++;//skip #
+
+    while (i < str.length()) {
+        payload.push_back(str[i]);
+        i++;
+    }
+
+    if (payload.length() % 2 != 0 || payload.length() > 16 || payload.length() < 2) {
+        cout << "Payload not valid!" << endl;
+    } else {
+        vector<string> parsed_payload;
+        int payload_dec = 0;
+        string string_into_vector;
+        for (int j = 0; j < payload.length(); j = j + 2) {
+            string str2 = payload.substr(j, 2);
+            payload_dec = hexToDec(str2);
+            str2 = std::to_string(payload_dec);
+            string position;
+            if (j == 0) {
+                position = "st";
+            } else {
+                if (j == 2) {
+                    position = "nd";
+                } else{
+                    if (j == 4){
+                        position = "rd";
+                    } else {
+                        position = "th";
+                    }
+                }
+            }
+
+            if(j==0) {
+                string_into_vector = "1" + position + " byte -> " + str2 + " in decimal";
+
+            }else{
+                string_into_vector = std::to_string(j/2 + 1) + position + " byte -> " + str2 + " in decimal";
+            }
+
+            parsed_payload.emplace_back(string_into_vector);
+
+
+        }
+
+        for(const string& s : parsed_payload){
+            cout << s << endl;
+        }
+
+    }
+}
+
+void log(string str, std::ofstream& MyFile){
+    // Write to the file
+    MyFile << getUnixTimestamp() << " " << str << endl;
 
 }
 
+void statistics(){
+    //TODO
+}
 
-//void log(){
-//    //TODO
-//}
-//
-//void statistics(){
-//
-//}
+void idleThread(){
+    int a = open_can("candump.log");
+    cout << "Codice apertura file: " << a << endl;
+    char message[10];
+    while(can_receive(message) != -1){
+        cout << message << endl;
+        std::string str(message);
+        cout << str << endl;
+        parse(str);
+    }
+    close_can();
+}
 
-//idle state function
-//void idle(){
-//
-//}
-//
-//void run(){
-//
-//}
-//
-//typedef enum {
-//    STATE_INIT,
-//    STATE_IDLE,
-//    STATE_RUN,
-//    NUM_STATES
-//}State_t;
-//
-//typedef struct{
-//    State_t state;
-//    void (*state_function)();
-//} StateMachine_t;
-//
-//void fn_INIT();
-//void fn_IDLE();
-//void fn_RUN();
-//
-//State_t current_state = STATE_INIT;
-//
-//StateMachine_t fsm[] = {
-//        {STATE_INIT, fn_INIT},
-//        {STATE_IDLE, fn_IDLE},
-//        {STATE_RUN, fn_RUN}
-//};
-//
-//typedef enum {
-//    E_NONE,
-//    E_START,
-//    E_STOP
-//} Event;
-//
-//Event event = E_NONE;
-//
-//void fn_INIT(){
-//    if (event == E_NONE){
-//
-//        current_state = STATE_IDLE;
-//    }
-//}
-//
-//void fn_IDLE(){
-//    if (event == E_START){
-//        RedOn();
-//        current_state = STATE_RUN;
-//    }
-//}
-//
-//void fn_RUN(){
-//    if(event ==E_STOP){
-//        BlueOn();
-//        current_state = STATE_IDLE;
-//    }
-//}
-//
+void runThread(){
+    int a = open_can("candump.log");
+    cout << "Codice apertura file: " << a << endl;
+    char message[10];
+
+    //create filename with datetime
+    auto t = std::time(nullptr);
+    auto tm = *std::localtime(&t);
+
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%d-%m-%Y %H-%M-%S");
+    auto str_format = oss.str();
+
+    string filename = "file" + str_format;
+    ofstream MyFile(filename);
+    while (can_receive(message) != -1) {
+        cout << message << endl;
+        std::string str(message);
+        cout << str << endl;
+        parse(str);
+        log(str, MyFile);
+    }
+    close_can();
+    MyFile.close();
+}
+
+/*enum with the various states*/
+typedef enum {
+    STATE_INIT,
+    STATE_IDLE,
+    STATE_RUN,
+    NUM_STATES
+}State_t;
+
+/*state machine*/
+typedef struct{
+    State_t state;
+    void (*state_function)();
+} StateMachine_t;
+
+/*prototypes of the function corresponding to the states*/
+void fn_INIT();
+void fn_IDLE();
+void fn_RUN();
+
+/*initialization to the init state*/
+State_t current_state = STATE_INIT;
+
+/*initialization of the fsm*/
+StateMachine_t fsm[] = {
+        {STATE_INIT, fn_INIT},
+        {STATE_IDLE, fn_IDLE},
+        {STATE_RUN, fn_RUN}
+};
+
+/*enum with the various events*/
+typedef enum {
+    E_NONE,
+    E_START,
+    E_STOP
+} Event;
+
+/*initialization of the current event*/
+Event event = E_NONE;
+
+/*declarations of the functions that correspond to the states*/
+void fn_INIT(){
+    if (event == E_NONE){
+        //start thread
+        std::thread idle(idleThread);
+        current_state = STATE_IDLE;
+    }
+}
+
+void fn_IDLE(){
+    if (event == E_START){
+        //TODO
+        current_state = STATE_RUN;
+    }
+}
+
+void fn_RUN(){
+    if(event ==E_STOP){
+        //TODO
+        current_state = STATE_IDLE;
+    }
+}
+
 //void eventDetector(){
 //
 //}
@@ -161,23 +250,8 @@ int main(void){
 //    worker.join();
 
 
-
-
-    int a = open_can("file.txt");
-
-    cout << "Codice apertura file: " << a << endl;
-
-    char message[10];
-
-    for (int i = 0; i < 10; ++i) {
-        can_receive(message);
-        cout << message << endl;
-        std::string str(message);
-        cout << str << endl;
-        parse(str);
-    }
-
-    close_can();
+    idleThread();
+    //runThread();
     cout << "End of Project 2" << endl;
 
     return 0;
