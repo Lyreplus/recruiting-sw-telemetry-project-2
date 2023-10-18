@@ -6,7 +6,6 @@
 using namespace std;
 #include <fstream>
 #include "fake_receiver.h"
-#include <cmath>
 #include <string>
 #include <vector>
 #include "unixTime.h"
@@ -187,34 +186,34 @@ void runThread(){
         char message[20];
 
         //create filename with datetime
-        auto t = std::time(nullptr);
+        time_t t = std::time(nullptr);
         auto tm = *std::localtime(&t);
 
         std::ostringstream oss;
         oss << std::put_time(&tm, "%d-%m-%Y %H-%M-%S");
-        auto str_format = oss.str();
+        string str_format = oss.str();
 
         string filename = "file" + str_format + ".txt";
-        ofstream MyFile(filename);
+        ofstream MyFile(filename, std::ios::out | std::ios::binary);
         while (event != E_STOP && event != E_ENDFILE) {
             unique_lock<mutex> can_protection(LogMutex);
             if(can_receive(message) != -1){
                 can_protection.unlock();
-                auto start = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
+                long start = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
 
                 std::string str(message);
                 parse(str, id, event);
                 if(!(rows.find(id) == rows.end())){
-                    auto end = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
-                    auto delta = end - start;
+                    long end = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
+                    long delta = end - start;
                     //cout << "Tempo trascorso: " << delta << " millisecondi" << endl;
                     uint amount = get<0>(rows[id]);
-                    auto alpha = get<2>(rows[id]);
+                    long alpha = get<2>(rows[id]);
                     long beta = end - alpha;
                     rows[id] = tuple<uint, double, long>(amount+1, (get<1>(rows[id])*amount + beta)/(amount+1), end);
                 }else{
-                    auto end = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
-                    auto delta = end - start;
+                    long end = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
+                    long delta = end - start;
                     rows[id] = tuple<uint, double, long>(1, delta, end);
                 }
                 log(str, MyFile);

@@ -14,4 +14,4 @@ data_converter.o: data_converter.cpp
 	g++ -c data_converter.cpp
 
 clean:
-	rm -rf *.o main
+	rm -rf *.o main *.csv *.txt
