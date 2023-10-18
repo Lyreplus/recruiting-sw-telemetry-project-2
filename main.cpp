@@ -21,11 +21,11 @@ using namespace std;
 mutex LogMutex;
 std::string id;
 int endfile = 0;
+int numFile = 0;
 
 extern "C"{
     #include "fake_receiver.h"
 }
-
 
 
 /*catch STOP event*/
@@ -34,6 +34,7 @@ void checkS1();
 /*catch START event*/
 void checkS2();
 
+void dump();
 
 /*actual functions that do the work*/
 void parse(std::string str);
@@ -148,108 +149,30 @@ int main(void){
 }
 
 void checkS1(){
-    while(event == E_STOP || event == E_NONE || event != E_ENDFILE);
+    cout << "s1" << endl;
+    while(event == E_STOP || event == E_NONE);
 }
 
 void checkS2(){
-    while(event == E_START || event != E_ENDFILE);
-}
-void parse(std::string str) {
-    std::string payload;
-    int i = 0;
-    id = "";
-
-    while (str[i] != '#') {
-        id.push_back(str.at(i));
-        i++;
-    }
-
-    uint16_t id_dec = hexToDec(id);
-
-    cout << "ID: " << id_dec << endl;
-
-    i++;//skip #
-
-    while (i < str.length()) {
-        payload.push_back(str[i]);
-        i++;
-    }
-
-    if (payload.length() % 2 != 0 || payload.length() > 16 || payload.length() < 2) {
-        cout << "Payload not valid!" << endl;
-    } else {
-        vector<string> parsed_payload;
-        int payload_dec = 0;
-        string string_into_vector;
-        for (int j = 0; j < payload.length(); j = j + 2) {
-            string str2 = payload.substr(j, 2);
-            payload_dec = hexToDec(str2);
-            str2 = std::to_string(payload_dec);
-            string position;
-            if (j == 0) {
-                position = "st";
-            } else {
-                if (j == 2) {
-                    position = "nd";
-                } else{
-                    if (j == 4){
-                        position = "rd";
-                    } else {
-                        position = "th";
-                    }
-                }
-            }
-
-            if(j==0) {
-                string_into_vector = "1" + position + " byte -> " + str2 + " in decimal";
-
-            }else{
-                string_into_vector = std::to_string(j/2 + 1) + position + " byte -> " + str2 + " in decimal";
-            }
-
-            if(id_dec == 160 && hexToDec(payload) == 26367){
-                event = E_STOP;
-            }
-
-            if(id_dec == 160 && (hexToDec(payload) == 26113 || hexToDec(payload) == 65281)){
-                event = E_START;
-            }
-
-            parsed_payload.emplace_back(string_into_vector);
-
-
-        }
-
-        for(string s : parsed_payload){
-            cout << s << endl;
-        }
-
-    }
-}
-
-void log(string str, std::ofstream& MyFile){
-    // Write to the file
-    MyFile << getUnixTimestamp() << " " << str << endl;
-
-}
-
-void statistics(){
-    //TODO
+    cout << "s2" << endl;
+    while(event == E_START);
 }
 
 void idleThread(){
+    cout << "Siamo in idle" << endl;
     char message[20];
     while(event != E_START && event != E_ENDFILE){
         unique_lock<mutex> idleLock(LogMutex);
         if(can_receive(message) != -1){
             idleLock.unlock();
-            cout << message << endl;
+            //cout << message << endl;
             std::string str(message);
             parse(str, id, event);
         }else{
+            idleLock.unlock();
             unique_lock<mutex> eventLock(LogMutex);
             event = E_ENDFILE;
-            idleLock.unlock();
+            eventLock.unlock();
         }
     }
 
@@ -257,15 +180,9 @@ void idleThread(){
 }
 
 void runThread(){
-    unique_lock<mutex> runLock(LogMutex);
 
-    map<string, tuple<uint, double>> rows;
-
-//    auto start = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
-//    std::this_thread::sleep_for(std::chrono::seconds(2));
-//    auto end = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
-//    auto delta = end - start;
-//    std::cout << "Tempo trascorso: " << delta << " millisecondi" << std::endl;
+    cout << "Siamo in run; " << endl;
+    map<string, tuple<uint, double, long>> rows;
 
         char message[20];
 
@@ -277,28 +194,45 @@ void runThread(){
         oss << std::put_time(&tm, "%d-%m-%Y %H-%M-%S");
         auto str_format = oss.str();
 
-        string filename = "file" + str_format;
+        string filename = "file" + str_format + ".txt";
         ofstream MyFile(filename);
         while (event != E_STOP && event != E_ENDFILE) {
+            unique_lock<mutex> can_protection(LogMutex);
             if(can_receive(message) != -1){
-                cout << message << endl;
+                can_protection.unlock();
                 auto start = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
 
                 std::string str(message);
-                cout << str << endl;
                 parse(str, id, event);
                 if(!(rows.find(id) == rows.end())){
                     auto end = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
                     auto delta = end - start;
-                    cout << "Tempo trascorso: " << delta << " millisecondi" << endl;
+                    //cout << "Tempo trascorso: " << delta << " millisecondi" << endl;
+                    uint amount = get<0>(rows[id]);
+                    auto alpha = get<2>(rows[id]);
+                    long beta = end - alpha;
+                    rows[id] = tuple<uint, double, long>(amount+1, (get<1>(rows[id])*amount + beta)/(amount+1), end);
+                }else{
+                    auto end = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
+                    auto delta = end - start;
+                    rows[id] = tuple<uint, double, long>(1, delta, end);
                 }
                 log(str, MyFile);
             } else {
+                can_protection.unlock();
+                unique_lock<mutex> runLock(LogMutex);
                 event = E_ENDFILE;
+                runLock.unlock();
             }
-
         }
-        MyFile.close();
 
-    runLock.unlock();
+        //create a csv file with the statistics
+        ofstream csvFile(to_string(numFile) + " statistics.csv");
+        csvFile << "ID,number_of_messages,mean_time " << endl;
+        for(auto& row : rows){
+            csvFile << row.first << ", " << get<0>(row.second) << ", " << get<1>(row.second) << ", " << endl;
+        }
+        csvFile.close();
+        numFile++;
+        MyFile.close();
 }

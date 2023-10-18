@@ -11,7 +11,7 @@
 
 using namespace std;
 
-void parse(std::string str, string &id, Event event);
+void parse(string str, string &id, Event &event);
 
 void log(string str, std::ofstream& MyFile);
 

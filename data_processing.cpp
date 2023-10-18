@@ -4,6 +4,7 @@
 
 #include "data_processing.h"
 #include <iostream>
+#include <fstream>
 #include <string>
 #include "unixTime.h"
 #include "data_converter.h"
@@ -13,7 +14,7 @@
 
 using namespace std;
 
-void parse(std::string str, string &id, Event &event) {
+void parse(string str, string &id, Event &event) {
     std::string payload;
     int i = 0;
     id = "";
@@ -24,8 +25,6 @@ void parse(std::string str, string &id, Event &event) {
     }
 
     uint16_t id_dec = hexToDec(id);
-
-    cout << "ID: " << id_dec << endl;
 
     i++;//skip #
 
@@ -77,10 +76,6 @@ void parse(std::string str, string &id, Event &event) {
             parsed_payload.emplace_back(string_into_vector);
 
 
-        }
-
-        for(string s : parsed_payload){
-            cout << s << endl;
         }
 
     }
