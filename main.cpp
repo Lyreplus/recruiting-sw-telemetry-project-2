@@ -1,4 +1,4 @@
-//#include <cstdio>
+#include <cstdio>
 #include <iostream>
 #include <ranges>
 #include <thread>
@@ -11,57 +11,156 @@ using namespace std;
 #include <vector>
 #include "unixTime.h"
 #include <iomanip>
+#include <mutex>
+#include <chrono>
+#include <map>
+#include "data_processing.h"
+#include "types.h"
+#include "data_converter.h"
+
+mutex LogMutex;
+std::string id;
+int endfile = 0;
 
 extern "C"{
     #include "fake_receiver.h"
 }
 
-//static bool s_Finished = false;
-//
-//void DoWork(){
-//    while(!s_Finished){
-//        std::cout << "Great Scott its working!" << std::endl;
-//
-//    }
-//};
 
-/*catch START event*/
-void checkS1(){
-
-}
 
 /*catch STOP event*/
-void checkS2(){
+void checkS1();
 
-}
+/*catch START event*/
+void checkS2();
 
-int hexToDec(std::string str){
-    int hexToDec = 0;
-    int z = 0;
-    for(int y = str.length()-1; y>=0; y--){
-        char a = str.at(y);
-        if(a >= 48 && a<=57){
-            int ia = a - '0';
-            hexToDec += ia*(int)pow(16, z);
-        }else{
-            if(a>= 65 && a<=70){
-                int ia = a - 55;
-                hexToDec += ia*(int)pow(16, z);
-            }
-        }
-        z++;
-    }
-    return hexToDec;
-}
 
 /*actual functions that do the work*/
+void parse(std::string str);
+
+void log(string str, std::ofstream& MyFile);
+
+void statistics();
+
+void idleThread();
+
+void runThread();
+
+/*enum with the various states*/
+typedef enum {
+    STATE_INIT,
+    STATE_IDLE,
+    STATE_RUN,
+    STATE_ENDFILE,
+    NUM_STATES
+}State_t;
+
+/*state machine*/
+typedef struct{
+    State_t state;
+    void (*state_function)();
+} StateMachine_t;
+
+/*prototypes of the function corresponding to the states*/
+void fn_INIT();
+void fn_IDLE();
+void fn_RUN();
+void fn_ENDFILE();
+
+/*initialization to the init state*/
+State_t current_state = STATE_INIT;
+
+/*initialization of the fsm*/
+StateMachine_t fsm[] = {
+        {STATE_INIT, fn_INIT},
+        {STATE_IDLE, fn_IDLE},
+        {STATE_RUN, fn_RUN},
+        {STATE_ENDFILE, fn_ENDFILE}
+};
+
+
+
+/*initialization of the current event*/
+Event event = E_NONE;
+
+/*declarations of the functions that correspond to the states*/
+void fn_INIT(){
+    if (event == E_NONE){
+        current_state = STATE_IDLE;
+    }
+}
+
+void fn_IDLE(){
+    std::thread thread(idleThread);
+    checkS1();
+    thread.join();
+    if(event != E_ENDFILE){
+        current_state = STATE_RUN;
+    }else{
+        current_state = STATE_ENDFILE;
+    }
+}
+
+void fn_RUN(){
+    std::thread thread(runThread);
+    checkS2();
+    thread.join();
+    if(event != E_ENDFILE){
+        current_state = STATE_IDLE;
+    }else{
+        current_state = STATE_ENDFILE;
+    }
+
+}
+
+void fn_ENDFILE(){
+    cout << "End Of File!" << endl;
+    endfile = 1;
+}
+
+int main(void){
+    cout << "Welcome to Project 2" << endl;
+
+//    std::thread idle(idleThread);
+//    idle.join();
+//    sleep(2);
+//    std::thread run(runThread);
+//    run.join();
+    int a = open_can("candump.log");
+    cout << "Codice apertura file: " << a << endl;
+    if(a != -1){
+        while(endfile == 0){
+            if(current_state < NUM_STATES){
+                (*fsm[current_state].state_function) ();
+            } else{
+                current_state = STATE_INIT;
+            }
+        }
+        close_can();
+    }else{
+        cout << "Error" << endl;
+    }
+
+
+    cout << "End of Project 2" << endl;
+
+    return 0;
+}
+
+void checkS1(){
+    while(event == E_STOP || event == E_NONE || event != E_ENDFILE);
+}
+
+void checkS2(){
+    while(event == E_START || event != E_ENDFILE);
+}
 void parse(std::string str) {
-    std::string id;
     std::string payload;
     int i = 0;
+    id = "";
 
     while (str[i] != '#') {
-        id.push_back(str[i]);
+        id.push_back(str.at(i));
         i++;
     }
 
@@ -108,12 +207,20 @@ void parse(std::string str) {
                 string_into_vector = std::to_string(j/2 + 1) + position + " byte -> " + str2 + " in decimal";
             }
 
+            if(id_dec == 160 && hexToDec(payload) == 26367){
+                event = E_STOP;
+            }
+
+            if(id_dec == 160 && (hexToDec(payload) == 26113 || hexToDec(payload) == 65281)){
+                event = E_START;
+            }
+
             parsed_payload.emplace_back(string_into_vector);
 
 
         }
 
-        for(const string& s : parsed_payload){
+        for(string s : parsed_payload){
             cout << s << endl;
         }
 
@@ -131,128 +238,67 @@ void statistics(){
 }
 
 void idleThread(){
-    int a = open_can("candump.log");
-    cout << "Codice apertura file: " << a << endl;
-    char message[10];
-    while(can_receive(message) != -1){
-        cout << message << endl;
-        std::string str(message);
-        cout << str << endl;
-        parse(str);
+    char message[20];
+    while(event != E_START && event != E_ENDFILE){
+        unique_lock<mutex> idleLock(LogMutex);
+        if(can_receive(message) != -1){
+            idleLock.unlock();
+            cout << message << endl;
+            std::string str(message);
+            parse(str, id, event);
+        }else{
+            unique_lock<mutex> eventLock(LogMutex);
+            event = E_ENDFILE;
+            idleLock.unlock();
+        }
     }
-    close_can();
+
+
 }
 
 void runThread(){
-    int a = open_can("candump.log");
-    cout << "Codice apertura file: " << a << endl;
-    char message[10];
+    unique_lock<mutex> runLock(LogMutex);
 
-    //create filename with datetime
-    auto t = std::time(nullptr);
-    auto tm = *std::localtime(&t);
+    map<string, tuple<uint, double>> rows;
 
-    std::ostringstream oss;
-    oss << std::put_time(&tm, "%d-%m-%Y %H-%M-%S");
-    auto str_format = oss.str();
+//    auto start = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
+//    std::this_thread::sleep_for(std::chrono::seconds(2));
+//    auto end = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
+//    auto delta = end - start;
+//    std::cout << "Tempo trascorso: " << delta << " millisecondi" << std::endl;
 
-    string filename = "file" + str_format;
-    ofstream MyFile(filename);
-    while (can_receive(message) != -1) {
-        cout << message << endl;
-        std::string str(message);
-        cout << str << endl;
-        parse(str);
-        log(str, MyFile);
-    }
-    close_can();
-    MyFile.close();
-}
+        char message[20];
 
-/*enum with the various states*/
-typedef enum {
-    STATE_INIT,
-    STATE_IDLE,
-    STATE_RUN,
-    NUM_STATES
-}State_t;
+        //create filename with datetime
+        auto t = std::time(nullptr);
+        auto tm = *std::localtime(&t);
 
-/*state machine*/
-typedef struct{
-    State_t state;
-    void (*state_function)();
-} StateMachine_t;
+        std::ostringstream oss;
+        oss << std::put_time(&tm, "%d-%m-%Y %H-%M-%S");
+        auto str_format = oss.str();
 
-/*prototypes of the function corresponding to the states*/
-void fn_INIT();
-void fn_IDLE();
-void fn_RUN();
+        string filename = "file" + str_format;
+        ofstream MyFile(filename);
+        while (event != E_STOP && event != E_ENDFILE) {
+            if(can_receive(message) != -1){
+                cout << message << endl;
+                auto start = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
 
-/*initialization to the init state*/
-State_t current_state = STATE_INIT;
+                std::string str(message);
+                cout << str << endl;
+                parse(str, id, event);
+                if(!(rows.find(id) == rows.end())){
+                    auto end = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
+                    auto delta = end - start;
+                    cout << "Tempo trascorso: " << delta << " millisecondi" << endl;
+                }
+                log(str, MyFile);
+            } else {
+                event = E_ENDFILE;
+            }
 
-/*initialization of the fsm*/
-StateMachine_t fsm[] = {
-        {STATE_INIT, fn_INIT},
-        {STATE_IDLE, fn_IDLE},
-        {STATE_RUN, fn_RUN}
-};
+        }
+        MyFile.close();
 
-/*enum with the various events*/
-typedef enum {
-    E_NONE,
-    E_START,
-    E_STOP
-} Event;
-
-/*initialization of the current event*/
-Event event = E_NONE;
-
-/*declarations of the functions that correspond to the states*/
-void fn_INIT(){
-    if (event == E_NONE){
-        //start thread
-        std::thread idle(idleThread);
-        current_state = STATE_IDLE;
-    }
-}
-
-void fn_IDLE(){
-    if (event == E_START){
-        //TODO
-        current_state = STATE_RUN;
-    }
-}
-
-void fn_RUN(){
-    if(event ==E_STOP){
-        //TODO
-        current_state = STATE_IDLE;
-    }
-}
-
-//void eventDetector(){
-//
-//}
-
-int main(void){
-    cout << "Welcome to Project 2" << endl;
-
-    //playing with threads
-    //starting worker thread
-//    std::thread worker(DoWork);
-//
-//    //enter will set s_Finished to true causing thread to stop
-//    std::cin.get();
-//    s_Finished = true;
-//
-//    //wait the thread to finish its execution
-//    worker.join();
-
-
-    idleThread();
-    //runThread();
-    cout << "End of Project 2" << endl;
-
-    return 0;
+    runLock.unlock();
 }
