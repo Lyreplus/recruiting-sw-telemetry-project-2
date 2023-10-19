@@ -15,6 +15,5 @@ void parse(string str, string &id, Event &event);
 
 void log(string str, std::ofstream& MyFile);
 
-void statistics();
 
 #endif //RECRUITING_SW_TELEMETRY_PROJECT_2_DATA_PROCESSING_H

@@ -37,7 +37,7 @@ void parse(string str, string &id, Event &event) {
         cout << "Payload not valid!" << endl;
     } else {
         vector<string> parsed_payload;
-        int payload_dec = 0;
+        int payload_dec;
         string string_into_vector;
         for (int j = 0; j < payload.length(); j = j + 2) {
             string str2 = payload.substr(j, 2);
@@ -84,8 +84,4 @@ void parse(string str, string &id, Event &event) {
 void log(string str, std::ofstream& MyFile){
     // Write to the file
     MyFile << getUnixTimestamp() << " " << str << endl;
-}
-
-void statistics(){
-    //TODO
 }

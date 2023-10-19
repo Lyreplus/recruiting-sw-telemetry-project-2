@@ -13,4 +13,13 @@ typedef enum {
     E_ENDFILE
 } Event;
 
+/*enum with the various states*/
+typedef enum {
+    STATE_INIT,
+    STATE_IDLE,
+    STATE_RUN,
+    STATE_ENDFILE,
+    NUM_STATES
+}State_t;
+
 #endif //RECRUITING_SW_TELEMETRY_PROJECT_2_TYPES_H
