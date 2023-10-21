@@ -1,150 +1,80 @@
-# Project 2
+## Telemetry - project 2
 
-> ⚠️ This document is fairly technical to maintain brevity, if you have **any** questions ask your recruiter or come visit us at floor -2 of Povo 2.
+Link: [instruction](eagle_readme.md)
 
-## Abstract
+### Structure
+The project is structured in this way:
+- `main.cpp`: contains the main function and the finite state machine
+- `./include`: contains the header files
+- `./src`: contains the source files
+- `./media`: contains the media files
 
-Build the most basic and crucial part of a telemetry software: logging every information received.
 
-The functions in **fake_receiver.h** will simulate an interface to CAN bus (protocol used in automotive to share data between ECUs). The data received must be parsed and then eventually logged.
+### Concept
+The project is based on a multithreaded finite state machine.
 
-You will implement a basic [Finite State Machine](#finite-state-machine) with Idle and Run states, both in Idle and Run you will receive data from "CAN" and [Parse](#parsing) them. Two specific messages will trigger a state transition. The telemetry will log the data only in Run state. Then, with the parsed messages, compute some basic [statistics](#statistics).  
-To receive messages, you will need to use a multithread approach, this means that you will need to start a thread.
-The thread will only receive data using the function *can_receive* (defined in *fake_receiver.h*). When implementing the second thread, take into consideration data race, and be careful to avoid two thread accessing the same memory location simultaneously.  
-The received data has to be processed in the main thread.  
-The second thread must be implemented in a separate file from main.cc .
+The state machine is implemented in the file `main.cpp` with the structure `StateMachine_t`.
 
-So the requirements are:
+The structure contains a variable `state` of type `State_t` and a function pointer of type `void (*state_function)(void)`.
+For each state, there is a function that is called when the state is entered.
 
-- [Finite State Machine](#finite-state-machine)
-- [Logging](#logged-file)
-- [Parse](#parsing)
-- [statistics](#statistics)
-
-**_Message example_**
-
-```CAN
-0A0#6601
+```c++
+typedef struct{
+    State_t state;
+    void (*state_function)();
+} StateMachine_t;
 ```
 
-### Finite State Machine
+The `current_state` variable is global, and its access is protected by a mutex `LockMutex` during its access.
 
-Use a state machine architecture to separate the functionalities in Idle and Run state.
+This mutex will be also used to have a mutual exclusion on the access to the function `can_receive()` that is used to read the candump file.
 
-#### Idle
+In addition to that, there is a event variable `event` of type `Event` that is used to signal the state machine that an event has occurred.
+The schema of the state machine is shown below.  
 
-Receive messages and parse them, when you receive the start message transition to Run state. This defines that a new session is started.
-
-#### Run
-
-Receive and parse messages, save the raw messages in a file (each new session must have a different file). If you receive the stop message, then close the file and transition back to Idle.
-
-#### Extra states
-
-If you want you can add some extra states. Is not required.
-
-### Logged file
-
-The output file will have a line for each message received prepended with the timestamp at wich the message was received.
-
-```CAN
-// received message
-0A0#6601
-
-// logged message
-(unix_timestamp) 0A0#6601
+### Schema
+![Finite State Machine](media/fsm.jpeg "a title")
+Where the circles are the states and the arrows are the events.
+For each state there is a function that is called when the state is entered.
+```c++
+StateMachine_t fsm[] = {
+        {STATE_INIT, fn_INIT},
+        {STATE_IDLE, fn_IDLE},
+        {STATE_RUN, fn_RUN},
+        {STATE_ENDFILE, fn_ENDFILE}
+};
 ```
 
-Each session must have a unique filename.
+### How it works
+The finite state machine (fsm) is initialized with the event `E_NONE` and the `STATE_INIT`. Then the function `fn_INIT()` is called.
 
-### Start and Stop messages
+This function will change the state to `STATE_IDLE` and the loop of the fsm will start (the one between `STATE_IDLE` and `STATE_RUN`).
 
-```CAN
-// Start
-0A0#6601
-0A0#FF01
+The `fn_IDLE()` function calls the `idleThread()` function in the main thread.
 
-// Stop
-0A0#66FF
-```
+The `idleThread()` function will check the output of the can_receive() function and if the output is -1, the event `E_ENDFILE` will be set.
 
-The start messages will be two, if one of them is received then transition to Run. If you are already in run, then do nothing.
+Otherwise, the function `parse` will be called and it will print the message payload on the screen, converted to decimal format.
 
-### Parsing
+After this, it will be checked if the event `E_START` has occurred.
+In this case the state will be changed to `STATE_RUN` and the function `fn_RUN()` will be called.
 
-You need to parse the received messages. **Don't** simply match string by string.
+The `fn_RUN()` function will execute the `runThread()` function in a second thread and after it will be checked if the event `E_STOP` has occurred.
 
-Message description:
+In this case the state will be changed to `STATE_IDLE` and the function `fn_IDLE()` will be called again.
 
-```CAN
-0A0#6601
-```
 
-The message is composed by ID and payload.
-The string received is formatted as **_\<ID>#\<PAYLOAD>_**.
+Everytime is running, the `parse` function check if the message is a start or stop message and if it is, the event `E_START` or `E_STOP` will be set.
+If is set the event `E_START` the function `fn_RUN()` will be called.
 
-#### ID
+The function `fn_RUN()`, as just said, will call the `runThread()` function in a second thread.
+This function will call again the `parse` function and the message will be also written in a file with the `log` function, adding the timestamp before the message.
 
-In the example is **_0A0_**, it is expressed in hexadecimal, so it represent 160 in decimal base. This field is at most 12 bits, use a uin16_t to represent it.
+Additionally, a csv file will be created with the statistics of the messages received everytime the event `E_STOP` is set.
 
-#### Payload
+When, during the execution of the state machine, the function `can_receive()` returns -1 (considering that most of the time this function returns the value of -1 when at the end of the file), event is set to `E_ENDFILE`, and the state machine is stopped. The program is then terminated.
 
-It is composed by at most 8 bytes, each composed by 2 chars in hexadecimal. So in the example there are only 2 bytes:
-
-```CAN
-// first example
-6601
-
-66 -> first byte  -> 102 in decimal
-01 -> second byte -> 1 in decimal
-
-// second example
-90291
-this is a nonvalid payload as the number of chars is not even.
-```
-
-### Statistics
-
-For each message ID, compute the statistics of the elapsed time beween messages of the same ID.
-
-Compute the mean time (in milliseconds) between each message. Note that message frequencies are different for each ID. Each time the FSM transitions to Stop, your script must save a [CSV](https://it.wikipedia.org/wiki/Comma-separated_values) containing the computed values (in number):
-
-|ID|number_of_messages|mean_time|
-|-:|-:|-:|
-|0A0|1|100|
-|181|100|0.01|
-
-## Getting started
-
-### Prerequisites
-
-- `git` and a [GitHub](https://github.com) account
-- C/C++ toolchain, with CMake
-
-For Debian / Ubuntu you can use:
-
-```bash
-sudo apt install build-essential cmake
-```
-
-### Setup
-
-- Download the project files [here](https://download-directory.github.io/?url=https%3A%2F%2Fgithub.com%2Feagletrt%2Frecruiting-sw%2Ftree%2Fmaster%2Ftelemetry%2Fproject_2)
-- Create a new GitHub repository and upload the project files via git
-- Start working on the task, creating git commits as you make progress
-- When it's time to deliver, please send your recruiter a link to your github repository
-
-### Building
-
-The project contains a CMakeLists.txt with a basic setup to build the project.
-
-The first time building the project:
-
-```bash
-mkdir -p build
-cd build
-cmake ..
-make -j$(nproc)
-```
-
-This will build the executable that will be located in `./bin` directory.
+### What can be changed and why I chose to do it in this way
+1. I decided to create the function `hexToDec()` to convert the payload of the message from hexadecimal to decimal format. I could have also used the `std::hex` function, but I preferred to create a function to do this.
+2. I decided to structure the fsm in this way, but I could have also used a switch case structure, or using the OOP paradigm, creating a class for the fsm and a class for the states; I could also use internal methods of the class to change the state and create a specific class for this fsm that inherits from the class of the fsm.
+3. I decided to name the txt file with the timestamp in order to have a unique name for each file. I could have also used a counter to do so, like the solution I used for the csv file.

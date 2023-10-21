@@ -1,7 +1,4 @@
-//
-// Created by lyreplus on 18/10/23.
-//
-
+//This file contains the types used the most in the project
 #ifndef RECRUITING_SW_TELEMETRY_PROJECT_2_TYPES_H
 #define RECRUITING_SW_TELEMETRY_PROJECT_2_TYPES_H
 

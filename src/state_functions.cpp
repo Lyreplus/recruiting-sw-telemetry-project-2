@@ -1,12 +1,9 @@
-//
-// Created by lyreplus on 19/10/23.
-//
 #include <iostream>
-#include "state_functions.h"
-#include "common.h"
-#include "thread_functions.h"
+#include "../include/state_functions.h"
+#include "../include/common.h"
+#include "../include/thread_functions.h"
 #include <thread>
-#include "check_statuses.h"
+#include "../include/check_statuses.h"
 
 using namespace std;
 
@@ -17,6 +14,8 @@ void fn_INIT(){
     }
 }
 
+// execute the idleThread function and loop if the event is STOP
+// If the event is different from ENDFILE and RUN, change the state to RUN
 void fn_IDLE(){
     idleThread();
     checkS1(event);
@@ -27,6 +26,8 @@ void fn_IDLE(){
     }
 }
 
+// execute the runThread function in another thread and loop if the event is START
+// If the event is STOP and is different from ENDFILE, change the state to IDLE
 void fn_RUN(){
     std::thread thread(runThread);
     checkS2(event);
@@ -39,6 +40,7 @@ void fn_RUN(){
 
 }
 
+// print the message "End Of File!" and change the value of the endfile variable to 1
 void fn_ENDFILE(){
     cout << "End Of File!" << endl;
     endfile = 1;

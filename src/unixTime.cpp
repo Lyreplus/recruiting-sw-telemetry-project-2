@@ -1,14 +1,11 @@
-//
-// Created by lyreplus on 16/10/23.
-//
-
 #include <iostream>
-#include "unixTime.h"
+#include "../include/unixTime.h"
 #include <ctime>
 #include <unistd.h>
 #include <string>
 #include <sstream>
 
+//debug function to print the unix timestamp
 void printUnixTimestamp(int seconds){
     std::time_t result = std::time(nullptr);
     unsigned int microsecond = 1000000;
@@ -20,11 +17,13 @@ void printUnixTimestamp(int seconds){
     }
 }
 
+//function to get the unix timestamp
 std::string getUnixTimestamp(){
     std::time_t actual_time = std::time(nullptr);
     return convertTimeToString(actual_time);
 }
 
+//function to convert the unix timestamp to string
 std::string convertTimeToString(std::time_t time){
     std::stringstream stringStream;
     stringStream << time;

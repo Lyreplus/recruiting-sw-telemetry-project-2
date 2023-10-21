@@ -5,15 +5,16 @@
 #include "fake_receiver.h"
 #include <string>
 #include <mutex>
-#include "types.h"
-#include "check_statuses.h"
-#include "state_functions.h"
-#include "common.h"
-#include "thread_functions.h"
+#include "include/types.h"
+#include "include/check_statuses.h"
+#include "include/state_functions.h"
+#include "include/common.h"
+#include "include/thread_functions.h"
 
 using namespace std;
 
-mutex LogMutex;
+//global variables
+mutex LockMutex;
 std::string id;
 int endfile = 0;
 int numFile = 0;
@@ -47,15 +48,22 @@ int main(){
     int a = open_can("candump.log");
     cout << "Can opening code: " << a << endl;
     if(a != -1){
+        //while the program isn't at the end of the file
         while(endfile == 0){
+            //check if the number of the current states is less than the number of the states
+            //otherwise (it should never happen) return to the init state and reset the event
             if(current_state < NUM_STATES){
                 (*fsm[current_state].state_function) ();
             } else{
+                unique_lock<mutex> eventLock(LockMutex);
+                event = E_NONE;
+                eventLock.unlock();
                 current_state = STATE_INIT;
             }
         }
         close_can();
     }else{
+        //if the can cannot be opened, print an error message
         cout << "Error" << endl;
     }
 

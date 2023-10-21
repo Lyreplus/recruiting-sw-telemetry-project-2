@@ -1,7 +1,4 @@
-//
-// Created by lyreplus on 19/10/23.
-//
-
+// Checks statuses of the system
 #ifndef RECRUITING_SW_TELEMETRY_PROJECT_2_CHECK_STATUSES_H
 #define RECRUITING_SW_TELEMETRY_PROJECT_2_CHECK_STATUSES_H
 
