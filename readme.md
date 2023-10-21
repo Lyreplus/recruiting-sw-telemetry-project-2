@@ -2,6 +2,13 @@
 
 Link: [instruction](eagle_readme.md)
 
+### How to compile and execute
+
+```bash
+make
+./main
+```
+
 ### Structure
 The project is structured in this way:
 - `main.cpp`: contains the main function and the finite state machine

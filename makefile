@@ -23,4 +23,4 @@ check_statuses.o: src/check_statuses.cpp include/types.h
 	g++ -c src/check_statuses.cpp
 
 clean:
-	rm -rf *.o main
+	rm -rf *.o *.csv file*.txt main
